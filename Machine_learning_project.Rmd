@@ -1,0 +1,209 @@
+---
+title: "Machine Learning - Prediction Assignment"
+author: "Antonello Finucci"
+date: "1/29/2018"
+output: html_document
+---
+
+# Introduction
+This document contains the study performed for the Coursera Practical Machine Learning course using the data from the Weight Lifting Exercises Dataset (WLE) about the quality with which physical exercises are performed. 
+The goal is to predict the way in which they did the exercise. The "quality" of the exercises is contained in the "classe" variable in the data set.
+
+This document describe how the model, to solve the classification problem, using cross validation to reduce the expected out of sample error is built, together with a description about the choices made.
+
+In this study three different machine learning algorithms are used:
+
+1. the Linear Discriminant Analysis (LDA)
+2. the Random Forest (RF)
+3. the Decision Trees (C5.0)
+
+A k-fold cross validation is used to improve the performances of the models. The performances of the models are assessed using the confusion matrix of the caret package.
+
+The selected ML model is used to predict the results of a 20 samples test data set.
+
+# Global settings
+
+```{r, message=FALSE}
+            set.seed(123)
+            library(caret)
+            library(corrplot)
+            library(C50)
+            
+```
+
+
+# Data preparation and analysis
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+```{r, message=FALSE}
+          training <-  read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+
+```
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r, message=FALSE}
+          testing <-  read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+```
+
+The train data set contains `r dim(training)[1]` observations and `r dim(training)[2]` variables.
+
+The test data set contains `r dim(testing)[1]` observations and `r dim(testing)[2]` variables.
+
+## Creating the training and testing data sets
+
+For training the ML models 70% of the data are used for training and 30% for validation.
+
+```{r, message=FALSE}
+          
+          inTrain <- createDataPartition(y=training$classe, p=0.7, list = FALSE)
+          
+          train.data <- training[inTrain,]
+          test.data <- training[-inTrain,]
+          
+          dim(train.data)
+          
+          dim(test.data)
+```
+
+## Data set clean up
+
+Due to the high number of variables further investigation are necessary to try to reduce their number.
+
+First the variable with zero or near-zero variance can be removed because they are uninformative.
+
+```{r, message=FALSE}
+            
+          nzv <- nearZeroVar(training)
+          train.data <- train.data[, -nzv]
+          test.data <- test.data[, -nzv]
+          
+          dim(train.data)
+          dim(test.data)
+          
+```
+
+Afterward all the columns containing an elevated percent of NAs are eliminated because they will have minor contribution to the outcomes.
+
+```{r, message=FALSE}
+          NAindex    <- sapply(train.data, function(x) mean(is.na(x))) > 0.9
+          train.data <- train.data[, NAindex==FALSE]
+          test.data  <- test.data[, NAindex==FALSE]
+          dim(train.data)
+          dim(test.data)
+```
+
+From a further analysis of the reduced data set it can be seen that the first 5 columns contains only Names, Timestamps, etc., and they could be also eliminated.
+
+```{r}
+          train.data <- train.data[,-c(1:5)]
+          test.data <- test.data[,-c(1:5)]
+          dim(train.data)
+          dim(test.data)
+```
+
+Another method to reduce the number of variables even further is to perform a Principal Components Analysis (PCA). This method is useful if the variables are correlated and allow to use a smaller set of variables that explain most of the variability of the original set.
+
+Before to proceed with a PCA analysis a correlation matrix of the variables is used to check the numbers of variables correlated.
+
+```{r, fig.height= 8, fig.width= 8, fig.cap="Figure 1 - Correlation Matrix"}
+          corMatrix <- cor(train.data[, -54])
+          corrplot(corMatrix,  method = "color",tl.cex = 0.6)
+
+
+```
+
+As it can be seen from the Figure 1 the number of highly correlated variables is limited (dark colors) and for this reason a PCA analysis is not performed.
+
+# Training the models using cross valivation
+
+In the following a k-fold cross validation with k = 5 is used. If the accuracy of the models are not satisfactory a k =10 cv would be used.
+
+## Linear Discriminant Analysis (LDA) model
+
+```{r, message=FALSE, cache=TRUE}
+          
+          ctrl_lda <- trainControl(method = "cv", number = 5)
+          fit.lda <- train(classe ~. , method = "lda", data = train.data, trControl = ctrl_lda)
+          
+          prediction.lda <- predict(fit.lda, newdata = test.data)
+          
+          cm_lda <- confusionMatrix(prediction.lda, test.data$classe)
+```
+
+```{r}
+          cm_lda
+
+```
+
+## Random Forest model
+
+```{r, message=FALSE, cache=TRUE}
+          
+          ctrl_rf <- trainControl(method = "cv", number = 5)
+          fit.rf <- train(classe ~. , method = "rf", data = train.data, trControl = ctrl_rf)
+          
+          prediction.rf <- predict(fit.rf, newdata = test.data)
+          
+          cm_rf <- confusionMatrix(prediction.rf, test.data$classe)
+```
+
+```{r}
+          cm_rf
+
+```
+
+## Training the C5.0 decision tree model
+
+```{r, message=FALSE, cache=TRUE}
+
+          ctrl_rf <- trainControl(method = "cv", number = 5)
+
+          fit.c50 <- train(classe ~. , method = "C5.0", data = train.data, trControl = ctrl_rf)
+          
+          prediction.c50 <- predict(fit.c50, newdata = test.data)
+          
+          cm_C50 <- confusionMatrix(prediction.c50, test.data$classe)
+
+
+```
+
+```{r}
+          cm_C50
+
+```
+
+# Final model selection
+
+```{r}
+         
+          accuracy_data <- data.frame(method =c ("lda", "rf", "c50"), 
+                                      accuracy = c(round(cm_lda$overall[1], 3),
+                                      round(cm_rf$overall[1], 3),
+                                      round(cm_C50$overall[1],3)))
+          accuracy_data
+          
+          
+         
+
+```
+
+From the table above it can be seen that the C5.0 model is the one having the best accuracy and it is the one selected to predict the test data set.
+
+# Predicting the test data set
+
+To complete the project the selected model, the c5.0 model, is used to predict the "classe" of the unseen data contained in the "testing" data set.
+
+```{r, cache=TRUE}
+          
+          predict_testing <- predict(fit.c50, testing)
+          
+          predict_testing
+
+
+```
